@@ -1,0 +1,198 @@
+package SistemaBancario;
+
+public class conversor {
+
+	import com.fasterxml.jackson.databind.JsonNode;
+	import com.fasterxml.jackson.databind.ObjectMapper;
+	import org.apache.hc.client5.http.classic.methods.HttpGet;
+	import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+	import org.apache.hc.client5.http.impl.classic.HttpClients;
+	import org.apache.hc.core5.http.HttpEntity;
+	import org.apache.hc.core5.http.ParseException;
+	import org.apache.hc.core5.http.io.entity.EntityUtils;
+
+	import java.io.IOException;
+	import java.util.HashMap;
+	import java.util.InputMismatchException;
+	import java.util.Map;
+	import java.util.Scanner;
+
+	public class CurrencyConverterMenu {
+
+	    
+	    private static final String API_KEY = "637ed423683efb3acc11063c"; 
+	    
+	    private static final String BASE_API_URL = "https://v6.exchangerate-api.com/v6/";
+
+	    private static final String API_BASE_CURRENCY = "USD"; 
+
+	    public static Map<String, Double> getExchangeRates() {
+	        // Constrói a URL para a requisição das taxas mais recentes
+	        String url = BASE_API_URL + API_KEY + "/latest/" + API_BASE_CURRENCY;
+	        Map<String, Double> rates = new HashMap<>();
+	        
+	        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+	            // Cria uma requisição HTTP GET
+	            HttpGet request = new HttpGet(url);
+	            
+	            // Executa a requisição e processa a resposta
+	            return httpClient.execute(request, response -> {
+	                HttpEntity entity = response.getEntity();
+	                if (entity != null) {
+	                    // Converte a entidade da resposta para uma String JSON
+	                    String json = EntityUtils.toString(entity);
+	                    // Cria um ObjectMapper para analisar o JSON
+	                    ObjectMapper mapper = new ObjectMapper();
+	                    // Lê a String JSON como uma árvore de nós JSON
+	                    JsonNode rootNode = mapper.readTree(json);
+
+	                    // Verifica se o resultado da API foi um sucesso
+	                    if ("success".equals(rootNode.get("result").asText())) {
+	                        // Obtém o nó que contém as taxas de conversão
+	                        JsonNode conversionRates = rootNode.get("conversion_rates");
+	                        if (conversionRates != null) {
+	                            // Itera sobre os campos (pares moeda:taxa) e os adiciona ao mapa
+	                            conversionRates.fields().forEachRemaining(entry -> 
+	                                rates.put(entry.getKey(), entry.getValue().asDouble())
+	                            );
+	                            return rates; // Retorna o mapa de taxas
+	                        }
+	                    } else {
+	                        // Se houver um erro da API, imprime o tipo de erro
+	                        System.err.println("Erro da API: " + rootNode.get("error-type").asText());
+	                    }
+	                }
+	                return null; // Retorna null em caso de falha ou dados ausentes
+	            });
+	        } catch (IOException | ParseException e) {
+	            // Captura exceções de IO (conexão) ou parsing (JSON)
+	            System.err.println("Erro ao conectar ou processar dados da API: " + e.getMessage());
+	            return null;
+	        }
+	    }
+
+	    /**
+	     * Converte um valor de uma moeda para outra usando as taxas de câmbio fornecidas.
+	     * As taxas de câmbio são relativas à moeda base usada na chamada da API (API_BASE_CURRENCY).
+	     * @param amount O valor a ser convertido.
+	     * @param fromCurrency O código da moeda de origem (ex: "USD").
+	     * @param toCurrency O código da moeda de destino (ex: "BRL").
+	     * @param exchangeRates Um mapa de taxas de câmbio, onde a chave é o código da moeda e o valor é a taxa em relação à API_BASE_CURRENCY.
+	     * @return O valor convertido, ou null se as moedas não forem encontradas nas taxas.
+	     */
+	    public static Double convertCurrency(double amount, String fromCurrency, String toCurrency, Map<String, Double> exchangeRates) {
+	        // Verifica se as moedas de origem e destino estão presentes nas taxas obtidas
+	        if (!exchangeRates.containsKey(fromCurrency)) {
+	            System.err.println("Erro: Moeda de origem '" + fromCurrency + "' não encontrada nas taxas de câmbio da API.");
+	            return null;
+	        }
+	        if (!exchangeRates.containsKey(toCurrency)) {
+	            System.err.println("Erro: Moeda de destino '" + toCurrency + "' não encontrada nas taxas de câmbio da API.");
+	            return null;
+	        }
+
+	        // Obtém as taxas de cada moeda em relação à API_BASE_CURRENCY
+	        double rateFrom = exchangeRates.get(fromCurrency);
+	        double rateTo = exchangeRates.get(toCurrency);
+
+	        // Aplica a fórmula de conversão: Valor_Convertido = Valor_Original * (Taxa_Destino / Taxa_Origem)
+	        return amount * (rateTo / rateFrom);
+	    }
+
+	    public static void main(String[] args) {
+	        Scanner scanner = new Scanner(System.in);
+	        
+	        System.out.println("Seja bem-vindo/a ao Conversor de Moeda =]");
+	        System.out.println("Buscando taxas de câmbio em relação a " + API_BASE_CURRENCY + "...");
+	        
+	        // Obtém as taxas de câmbio uma única vez no início para evitar chamadas repetidas à API
+	        Map<String, Double> rates = getExchangeRates();
+
+	        // Verifica se as taxas foram obtidas com sucesso
+	        if (rates == null || rates.isEmpty()) {
+	            System.err.println("Não foi possível obter as taxas de câmbio. Verifique sua chave de API, sua conexão com a internet ou os limites da API.");
+	            System.err.println("Pressione Enter para sair...");
+	            scanner.nextLine(); // Espera o usuário pressionar Enter antes de sair
+	            return; 
+	        }
+
+	        while (true) {
+	            System.out.println("\n*******************************************");
+	            System.out.println("1) Dólar       ==> Peso argentino (USD para ARS)");
+	            System.out.println("2) Peso argentino ==> Dólar (ARS para USD)");
+	            System.out.println("3) Dólar       ==> Real brasileiro (USD para BRL)");
+	            System.out.println("4) Real brasileiro ==> Dólar (BRL para USD)");
+	            System.out.println("5) Dólar       ==> Peso colombiano (USD para COP)");
+	            System.out.println("6) Peso colombiano ==> Dólar (COP para USD)");
+	            System.out.println("7) Sair");
+	            System.out.println("*******************************************");
+	            System.out.print("Escolha uma opção válida: ");
+
+	            try {
+	                int option = scanner.nextInt();
+	                scanner.nextLine(); // Consome a nova linha pendente após nextInt()
+
+	                String fromCurrency = "";
+	                String toCurrency = "";
+	                boolean isValidConversion = true; // Flag para indicar se a opção é uma conversão válida
+
+	                switch (option) {
+	                    case 1: // Dólar => Peso argentino
+	                        fromCurrency = "USD";
+	                        toCurrency = "ARS";
+	                        break;
+	                    case 2: // Peso argentino => Dólar
+	                        fromCurrency = "ARS";
+	                        toCurrency = "USD";
+	                        break;
+	                    case 3: // Dólar => Real brasileiro
+	                        fromCurrency = "USD";
+	                        toCurrency = "BRL";
+	                        break;
+	                    case 4: // Real brasileiro => Dólar
+	                        fromCurrency = "BRL";
+	                        toCurrency = "USD";
+	                        break;
+	                    case 5: // Dólar => Peso colombiano
+	                        fromCurrency = "USD";
+	                        toCurrency = "COP";
+	                        break;
+	                    case 6: // Peso colombiano => Dólar
+	                        fromCurrency = "COP";
+	                        toCurrency = "USD";
+	                        break;
+	                    case 7:
+	                        System.out.println("Obrigado por usar o Conversor de Moedas! Até mais.");
+	                        scanner.close(); // Fecha o scanner antes de sair
+	                        return; // Sai do método main, encerrando o programa
+	                    default:
+	                        System.out.println("Opção inválida. Por favor, escolha um número entre 1 e 7.");
+	                        isValidConversion = false; // Define como inválida para não pedir o valor
+	                        break;
+	                }
+
+	                if (isValidConversion) {
+	                    System.out.print("Digite o valor a ser convertido: ");
+	                    double amount = scanner.nextDouble();
+	                    scanner.nextLine(); // Consome a nova linha
+
+	                    Double convertedValue = convertCurrency(amount, fromCurrency, toCurrency, rates);
+
+	                    if (convertedValue != null) {
+	                        System.out.printf("Resultado: %.2f %s equivale a %.2f %s%n", amount, fromCurrency, convertedValue, toCurrency);
+	                    }
+	                }
+
+	            } catch (InputMismatchException e) {
+	                // Captura erro se o usuário digitar algo que não é um número para a opção ou valor
+	                System.out.println("Entrada inválida. Por favor, digite um número válido para a opção ou o valor.");
+	                scanner.nextLine(); // Limpa o buffer do scanner para evitar loop infinito
+	            } catch (Exception e) {
+	                // Captura qualquer outra exceção inesperada
+	                System.err.println("Ocorreu um erro inesperado: " + e.getMessage());
+	            }
+	        }
+	    }
+	}
+
+}
